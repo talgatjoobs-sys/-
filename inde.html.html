@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Фиксация прихода/ухода</title>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin: 20px; }
+    #reader { width: 300px; margin: auto; }
+    video { border-radius: 10px; }
+    .hidden { display: none; }
+    .photo-preview { width: 150px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Сканируйте свой QR-код</h2>
+  <div id="reader"></div>
+
+  <div id="form" class="hidden">
+    <h3>Здравствуйте, <span id="name"></span></h3>
+    <video id="camera" autoplay muted playsinline width="300" height="225"></video>
+    <br>
+    <button onclick="capturePhoto('приход')">🟢 Приход</button>
+    <button onclick="capturePhoto('уход')">🔴 Уход</button>
+    <canvas id="canvas" class="hidden"></canvas>
+    <img id="photo" class="photo-preview hidden" />
+    <p id="status"></p>
+  </div>
+
+  <script>
+    const employeeMap = {
+      "TAL001": "Ырыскали Талгат Рыскалиевич"
+    };
+
+    let video = document.getElementById("camera");
+    let canvas = document.getElementById("canvas");
+    let photo = document.getElementById("photo");
+    let nameSpan = document.getElementById("name");
+    let form = document.getElementById("form");
+    let status = document.getElementById("status");
+    let currentID = "";
+
+    // QR Scanner
+    const html5QrCode = new Html5Qrcode("reader");
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices.length) {
+        html5QrCode.start(
+          devices[0].id,
+          { fps: 10, qrbox: 250 },
+          qrCodeMessage => {
+            if (employeeMap[qrCodeMessage]) {
+              currentID = qrCodeMessage;
+              html5QrCode.stop();
+              nameSpan.innerText = employeeMap[qrCodeMessage];
+              document.getElementById("reader").classList.add("hidden");
+              form.classList.remove("hidden");
+              startCamera();
+            } else {
+              alert("Сотрудник не найден");
+            }
+          }
+        );
+      }
+    });
+
+    function startCamera() {
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => { video.srcObject = stream; })
+        .catch(err => alert("Не удалось получить доступ к камере"));
+    }
+
+    function capturePhoto(action) {
+      let context = canvas.getContext("2d");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0);
+      let imageData = canvas.toDataURL("image/png");
+      photo.src = imageData;
+      photo.classList.remove("hidden");
+      sendData(action, imageData);
+    }
+
+    function sendData(action, imageData) {
+      status.innerText = "Отправка данных...";
+      fetch("https://hook.integromat.com/YOUR_WEBHOOK_URL", {
+        method: "POST",
+        body: JSON.stringify({
+          id: currentID,
+          name: employeeMap[currentID],
+          action: action,
+          photo: imageData,
+          timestamp: new Date().toISOString()
+        }),
+        headers: { "Content-Type": "application/json" }
+      })
+      .then(res => res.ok ? status.innerText = "✅ Отправлено" : status.innerText = "❌ Ошибка")
+      .catch(() => status.innerText = "❌ Ошибка подключения");
+    }
+  </script>
+</body>
+</html>
